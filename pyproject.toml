@@ -1,0 +1,43 @@
+[project]
+name = "sentry"
+version = "0.1.0"
+description = "Local, single-user Linux threat-hunting tool"
+requires-python = ">=3.11"
+authors = [{ name = "Sergei Redkin", email = "sergei.redkin@gmail.com" }]
+readme = "README.md"
+license = { text = "MIT" }
+keywords = ["security", "linux", "threat-hunting", "monitoring", "tui"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Security",
+]
+dependencies = [
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.13,<2.0",
+    "psutil>=5.9",
+    "textual>=0.60",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov"]
+
+[project.scripts]
+sentry = "sentry.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/<github-username>/sentry-hunt"
+Repository = "https://github.com/<github-username>/sentry-hunt"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
