@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import namedtuple
 
+from sentry.collectors._common import is_safe_to_read
 from sentry.engine.observations import UserAccountObservation
 from sentry.engine.sink import ObservationSink
 from sentry.platform.base import Platform
@@ -24,6 +25,12 @@ _GroupEntry = namedtuple("_GroupEntry", ["name", "gid", "members"])
 
 
 def _parse_passwd_file(path: str) -> list[_PasswdEntry]:
+    # is_safe_to_read guards against a FIFO at this path -- open() would
+    # otherwise block forever waiting for a writer. Raising OSError here
+    # matches what a real "can't read this" failure looks like, so the
+    # caller's existing except-OSError degrade-gracefully path handles it.
+    if not is_safe_to_read(path):
+        raise OSError(f"not a regular file: {path}")
     entries = []
     with open(path) as f:
         for line in f:
@@ -42,6 +49,8 @@ def _parse_passwd_file(path: str) -> list[_PasswdEntry]:
 
 
 def _parse_group_file(path: str) -> dict[str, _GroupEntry]:
+    if not is_safe_to_read(path):
+        raise OSError(f"not a regular file: {path}")
     groups: dict[str, _GroupEntry] = {}
     with open(path) as f:
         for line in f:

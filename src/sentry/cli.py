@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import time
 from pathlib import Path
 
@@ -27,13 +28,29 @@ from sentry.rules.r5_auth_anomaly import AuthAnomalyRule
 from sentry.rules.r6_critical_change import CriticalChangeRule
 from sentry.storage.db import make_engine, resolve_db_path
 
+# Strips ASCII control characters (including ESC, newline, tab) from text
+# before it's printed to a raw terminal. Evidence fields like a process's
+# exe_path come from attacker-controllable filenames -- Linux allows any
+# byte except NUL and '/' in a filename, including raw terminal escape
+# sequences -- so printing them unsanitized via plain print() would let a
+# crafted path inject terminal control codes, or fake extra output lines,
+# into the console.
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def _sanitize_for_terminal(s: str) -> str:
+    return _CONTROL_CHAR_RE.sub("", s)
+
 
 def _build_collectors():
     # Shared across Process/NetworkCollector so a binary hashed once (by
     # either collector, in either cycle) is never re-hashed while its
-    # mtime+size stay the same -- see HashCache's docstring.
+    # mtime+size stay the same -- see HashCache's docstring. Returned
+    # alongside the collectors so the caller can pass it to run_cycle(),
+    # which clears it at the start of every cycle (must not outlive one
+    # cycle -- see run_cycle()'s docstring).
     hash_cache = HashCache()
-    return [
+    collectors = [
         ProcessCollector(hash_cache=hash_cache),
         NetworkCollector(hash_cache=hash_cache),
         UsersCollector(),
@@ -41,6 +58,7 @@ def _build_collectors():
         FileIntegrityCollector(),
         JournalAuthCollector(),
     ]
+    return collectors, hash_cache
 
 
 def _build_rules():
@@ -67,14 +85,14 @@ def cmd_run(args: argparse.Namespace) -> None:
     engine = make_engine()
 
     with Session(engine) as session:
-        collectors = _build_collectors()
+        collectors, hash_cache = _build_collectors()
         rules = _build_rules()
         previous = None
 
         for i in range(args.cycles):
             print(f"\n--- cycle {i + 1}/{args.cycles} ---")
             t0 = time.monotonic()
-            previous, findings = run_cycle(session, collectors, rules, previous)
+            previous, findings = run_cycle(session, collectors, rules, previous, hash_cache=hash_cache)
             elapsed = time.monotonic() - t0
             print(f"  collected+evaluated in {elapsed:.1f}s")
 
@@ -84,7 +102,7 @@ def cmd_run(args: argparse.Namespace) -> None:
                 print("  no findings")
             else:
                 for f in findings:
-                    print(f"  [{f.severity:6s}] {f.rule_id} {f.title}")
+                    print(f"  [{f.severity:6s}] {f.rule_id} {_sanitize_for_terminal(f.title)}")
 
             if i < args.cycles - 1:
                 time.sleep(args.interval)

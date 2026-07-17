@@ -22,6 +22,7 @@ from typing import Sequence
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sentry.collectors._common import HashCache
 from sentry.collectors.base import Collector
 from sentry.engine.clock import Clock, SystemClock
 from sentry.engine.sink import SqlAlchemyObservationSink
@@ -54,6 +55,7 @@ def run_cycle(
     rules: Sequence[Rule],
     previous_cycle_time: datetime | None,
     clock: Clock = SystemClock(),
+    hash_cache: HashCache | None = None,
 ) -> tuple[datetime, list[Finding]]:
     """Runs one full ingest->persist->diff->evaluate->alert cycle.
 
@@ -64,12 +66,33 @@ def run_cycle(
     flood the very first cycle with alerts (the "day 0" problem). Returns
     this cycle's timestamp (pass it back in as `previous_cycle_time` next
     call) and the findings produced (empty on the first call).
+
+    `hash_cache`, if given, is cleared at the start of every cycle. The
+    cache (shared between ProcessCollector/NetworkCollector for
+    performance -- see HashCache's docstring) must not outlive one cycle:
+    rule 1's baseline check depends on the sha256 it reports being fresh,
+    and clearing it here bounds any staleness to "within one snapshot
+    interval" instead of "for the life of the process."
     """
+    if hash_cache is not None:
+        hash_cache.clear()
+
     sink = SqlAlchemyObservationSink(session, clock=clock)
     cycle_time = sink.begin_cycle()
 
     for collector in collectors:
-        collector.collect(sink)
+        try:
+            collector.collect(sink)
+        except Exception:
+            # One misbehaving collector (a permission edge case, a psutil
+            # quirk, anything unanticipated) must not blind every other
+            # collector for the cycle -- mirrors run_rules()'s per-rule
+            # isolation in rules/base.py.
+            import logging
+
+            logging.getLogger(__name__).exception(
+                "collector %s raised during collect()", getattr(collector, "name", collector)
+            )
 
     for model in INTERVAL_MODELS:
         sink.close_cycle(model, cycle_time)

@@ -15,6 +15,7 @@ respects_warmup: False.
 
 from __future__ import annotations
 
+from sentry.collectors._common import is_safe_to_read
 from sentry.engine.identity import compute_identity_key
 from sentry.rules.base import EvalContext, Finding
 from sentry.storage.models import FileIntegrityRow
@@ -30,6 +31,11 @@ def _is_excluded(path: str) -> bool:
 
 
 def _read_lines_best_effort(path: str) -> list[str] | None:
+    # is_safe_to_read guards against a FIFO placed at this path (e.g.
+    # ~/.ssh/authorized_keys is user-writable) -- open() on a FIFO with no
+    # writer blocks forever, which would hang rule evaluation indefinitely.
+    if not is_safe_to_read(path):
+        return None
     try:
         with open(path) as f:
             return [line.strip() for line in f if line.strip()]

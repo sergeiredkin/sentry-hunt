@@ -20,6 +20,7 @@ import json
 import time
 from datetime import datetime, timezone
 
+from rich.text import Text
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 from textual import work
@@ -83,12 +84,18 @@ class EvidenceScreen(ModalScreen[None]):
             if alert is None:
                 self.dismiss()
                 return
-            self.query_one("#evidence-title", Label).update(
-                f"[{alert.severity}] {alert.rule_id} -- {alert.title}  (status: {alert.status})"
-            )
+            # Text(...), not an f-string, for both of these: alert.title
+            # and the evidence values below can contain attacker-chosen
+            # content (e.g. a crafted exe_path or cmdline -- Linux allows
+            # almost any byte in a filename). Passing a plain str to
+            # .update() gets parsed as Rich console markup by default, so
+            # a filename like "[bold red]FAKE[/]" could alter how the
+            # alert renders. Text() takes the string literally instead.
+            title_text = Text(f"[{alert.severity}] {alert.rule_id} -- {alert.title}  (status: {alert.status})")
+            self.query_one("#evidence-title", Label).update(title_text)
             evidence = json.loads(alert.evidence_json)
             pretty = "\n".join(f"{k}: {v}" for k, v in evidence.items())
-            self.query_one("#evidence-body", Static).update(pretty or "(no evidence fields)")
+            self.query_one("#evidence-body", Static).update(Text(pretty) if pretty else "(no evidence fields)")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         app: SentryTUI = self.app  # type: ignore[assignment]
@@ -140,15 +147,31 @@ class SentryTUI(App[None]):
         # cycle since cli.py also launches this app.
         from sentry.cli import _build_collectors, _build_rules
 
-        collectors = _build_collectors()
+        collectors, hash_cache = _build_collectors()
         rules = _build_rules()
         while True:
+            self._run_one_collection_cycle(collectors, rules, hash_cache)
+            time.sleep(self.cycle_interval)
+
+    def _run_one_collection_cycle(self, collectors, rules, hash_cache) -> None:
+        """One iteration of the background loop, split out so it's directly
+        testable and so a single bad cycle can't kill the worker forever.
+        Without this try/except, any unhandled exception here (SQLite lock
+        contention between this thread and a foreground Acknowledge/Mute
+        write, or anything else) would propagate out of the @work thread
+        and silently end run_collection_loop's `while True` for the rest
+        of the session -- the dashboard would go stale forever with no
+        visible error and no restart."""
+        try:
             with Session(self.engine) as session:
                 self._previous_cycle_time, _findings = run_cycle(
-                    session, collectors, rules, self._previous_cycle_time
+                    session, collectors, rules, self._previous_cycle_time, hash_cache=hash_cache
                 )
             self.call_from_thread(self.refresh_alerts)
-            time.sleep(self.cycle_interval)
+        except Exception:
+            import logging
+
+            logging.getLogger(__name__).exception("collection cycle failed; will retry next interval")
 
     def refresh_alerts(self) -> None:
         with Session(self.engine) as session:
@@ -178,7 +201,11 @@ class SentryTUI(App[None]):
         table.clear()
         self._alert_ids_by_row = []
         for a in sorted(alerts, key=lambda a: (SEVERITY_ORDER.get(a.severity, 9), -a.id)):
-            table.add_row(a.severity, a.rule_id, a.title, a.status, a.created_at.strftime("%Y-%m-%d %H:%M:%S"))
+            # a.title can contain attacker-chosen content (see EvidenceScreen's
+            # on_mount comment) -- Text() so it's never parsed as markup.
+            table.add_row(
+                a.severity, a.rule_id, Text(a.title), a.status, a.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            )
             self._alert_ids_by_row.append(a.id)
 
     def action_refresh(self) -> None:

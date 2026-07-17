@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from sentry.collectors._common import HashCache
 from sentry.engine.pipeline import _write_alerts, run_cycle
 from sentry.rules.r1_new_executable import NewExecutableRule
 from sentry.storage.models import AlertRow, ProcessObservationRow
@@ -21,6 +22,14 @@ class FakeCollector:
             for obs in self._observations_by_call[self._call_index]:
                 sink.emit(obs)
         self._call_index += 1
+
+
+class RaisingCollector:
+    name = "raising"
+    respects_warmup = False
+
+    def collect(self, sink):
+        raise RuntimeError("simulated collector failure")
 
 
 def test_first_cycle_persists_observations_and_returns_no_findings(session, tmp_path):
@@ -94,3 +103,54 @@ def test_evidence_json_round_trips(session):
 
     alert = session.execute(select(AlertRow)).scalars().one()
     assert json.loads(alert.evidence_json) == {"exe_path": "/bin/x", "count": 3}
+
+
+# --- security-review fixes: collector fault isolation, hash cache lifetime ---
+
+
+def test_run_cycle_isolates_a_raising_collector(session, tmp_path):
+    """A collector that raises must not prevent other collectors' data
+    from being persisted, and must not propagate out of run_cycle()."""
+    home = tmp_path / "home" / "alice"
+    home.mkdir(parents=True)
+    good_collector = FakeCollector([[make_process_observation(exe_path="/usr/bin/bash", sha256="a" * 64)]])
+    bad_collector = RaisingCollector()
+
+    cycle_time, findings = run_cycle(
+        session, [bad_collector, good_collector], [NewExecutableRule(home=home)], previous_cycle_time=None
+    )
+
+    assert findings == []
+    rows = session.execute(select(ProcessObservationRow)).scalars().all()
+    assert len(rows) == 1  # the good collector's observation still landed
+
+
+def test_run_cycle_continues_and_commits_when_a_later_collector_raises(session, tmp_path):
+    home = tmp_path / "home" / "alice"
+    home.mkdir(parents=True)
+    good_collector = FakeCollector([[make_process_observation(exe_path="/usr/bin/bash", sha256="a" * 64)]])
+    bad_collector = RaisingCollector()
+
+    # good collector runs first this time -- its data must survive a
+    # later collector blowing up in the same cycle.
+    run_cycle(session, [good_collector, bad_collector], [], previous_cycle_time=None)
+
+    rows = session.execute(select(ProcessObservationRow)).scalars().all()
+    assert len(rows) == 1
+
+
+def test_run_cycle_clears_hash_cache_at_start_of_every_call(session, tmp_path):
+    hash_cache = HashCache()
+    f = tmp_path / "bin"
+    f.write_bytes(b"hello")
+    hash_cache.get(str(f))
+    assert hash_cache._cache  # sanity: something is cached
+
+    run_cycle(session, [], [], previous_cycle_time=None, hash_cache=hash_cache)
+
+    assert hash_cache._cache == {}  # cleared at the start of the cycle
+
+
+def test_run_cycle_without_hash_cache_arg_still_works(session):
+    # hash_cache is optional -- must not raise when omitted (default None).
+    run_cycle(session, [], [], previous_cycle_time=None)

@@ -1,12 +1,31 @@
 from __future__ import annotations
 
+import os
+import threading
 from datetime import timedelta
 
 from sentry.engine.sink import SqlAlchemyObservationSink
 from sentry.rules.base import EvalContext
-from sentry.rules.r6_critical_change import CriticalChangeRule
+from sentry.rules.r6_critical_change import CriticalChangeRule, _read_lines_best_effort
 from sentry.storage.models import FileIntegrityRow
 from tests.conftest import make_file_integrity_observation
+
+
+def test_read_lines_best_effort_returns_none_for_fifo_without_hanging(tmp_path):
+    fifo_path = tmp_path / "authorized_keys"
+    os.mkfifo(fifo_path)
+
+    result: dict[str, object] = {}
+
+    def call():
+        result["value"] = _read_lines_best_effort(str(fifo_path))
+
+    t = threading.Thread(target=call, daemon=True)
+    t.start()
+    t.join(timeout=5)
+
+    assert not t.is_alive(), "_read_lines_best_effort blocked on a FIFO instead of skipping it"
+    assert result["value"] is None
 
 
 def test_fires_on_hash_change_default_high_severity(session, fixed_clock):

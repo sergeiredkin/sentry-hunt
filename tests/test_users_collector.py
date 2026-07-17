@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import threading
+
 from sqlalchemy import select
 
 from sentry.collectors.users import UsersCollector
@@ -129,3 +132,30 @@ def test_collect_drives_sink_correctly_end_to_end(tmp_path, session, fixed_clock
     alice = next(r for r in rows if r.username == "alice")
     assert alice.is_sudoer is True
     assert alice.first_seen == cycle_time
+
+
+def test_collect_does_not_hang_when_passwd_path_is_a_fifo(tmp_path):
+    # group file lives at a *different* path than the FIFO -- writing
+    # fixture content to the same path as the FIFO would itself block
+    # (open(fifo, "w") also waits for a reader), which isn't what this
+    # test is trying to exercise.
+    group_path = tmp_path / "group"
+    group_path.write_text(GROUP_CONTENT)
+
+    fifo_path = tmp_path / "passwd"
+    os.mkfifo(fifo_path)
+
+    sink = FakeSink()
+    result: dict[str, object] = {}
+
+    def call():
+        UsersCollector(passwd_path=str(fifo_path), group_path=str(group_path)).collect(sink)
+        result["done"] = True
+
+    t = threading.Thread(target=call, daemon=True)
+    t.start()
+    t.join(timeout=5)
+
+    assert not t.is_alive(), "collect() blocked on a FIFO instead of degrading gracefully"
+    assert result.get("done") is True
+    assert sink.emitted == []
