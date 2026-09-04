@@ -61,6 +61,24 @@ Some checks need to read files or process details that a normal user cannot see.
 
 If you want Sentry to see everything, run it with `sudo`. Either way, Sentry only *reads* these files. It never writes to them or changes them. When it cannot read something, it just records that fact and moves on, instead of stopping.
 
+## Troubleshooting
+
+**`sudo: sentry: command not found`**
+
+When using `sudo`, the conda/venv environment's PATH may not be inherited. Use `sudo -E` to preserve your environment:
+
+```bash
+sudo -E sentry tui
+```
+
+Alternatively, run with the full path:
+
+```bash
+sudo /home/sergei/miniconda3/bin/sentry tui
+```
+
+(Replace the path with your Python environment's bin directory if different.)
+
 ## Current limitations
 
 This is an early, working version. A few things to know:
