@@ -79,9 +79,15 @@ def default_critical_paths(
     home = home or Path.home()
     home_files = tuple(str(home / rel) for rel in DEFAULT_HOME_RELATIVE_CRITICAL_FILES)
     local_bin = local_bin_dir or Path(DEFAULT_LOCAL_BIN_DIR)
-    local_bin_files = tuple(str(p) for p in sorted(local_bin.iterdir()) if p.is_file()) if local_bin.is_dir() else ()
+    try:
+        local_bin_files = tuple(str(p) for p in sorted(local_bin.iterdir()) if p.is_file()) if local_bin.is_dir() else ()
+    except (PermissionError, OSError):
+        local_bin_files = ()
     sudoers_d = sudoers_d_dir or Path(DEFAULT_SUDOERS_D_DIR)
-    sudoers_d_files = tuple(str(p) for p in sorted(sudoers_d.iterdir()) if p.is_file()) if sudoers_d.is_dir() else ()
+    try:
+        sudoers_d_files = tuple(str(p) for p in sorted(sudoers_d.iterdir()) if p.is_file()) if sudoers_d.is_dir() else ()
+    except (PermissionError, OSError):
+        sudoers_d_files = ()
     return DEFAULT_CRITICAL_FILES + home_files + DEFAULT_CRITICAL_BINARIES + local_bin_files + sudoers_d_files
 
 
