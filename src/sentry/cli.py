@@ -73,8 +73,8 @@ def _build_rules():
 
 
 def _ensure_migrated() -> None:
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    ini_path = repo_root / "alembic.ini"
+    pkg_root = Path(__file__).resolve().parent
+    ini_path = pkg_root / "alembic.ini"
     cfg = Config(str(ini_path))
     command.upgrade(cfg, "head")
 
