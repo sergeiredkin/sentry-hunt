@@ -1,6 +1,6 @@
 [project]
 name = "sentry"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local, single-user Linux threat-hunting tool"
 requires-python = ">=3.11"
 authors = [{ name = "Sergei Redkin", email = "sergei.redkin@gmail.com" }]
@@ -29,8 +29,9 @@ dev = ["pytest>=8.0", "pytest-cov"]
 sentry = "sentry.cli:main"
 
 [project.urls]
-Homepage = "https://github.com/<github-username>/sentry-hunt"
-Repository = "https://github.com/<github-username>/sentry-hunt"
+Homepage = "https://github.com/sergeiredkin/sentry-hunt"
+Repository = "https://github.com/sergeiredkin/sentry-hunt"
+Issues = "https://github.com/sergeiredkin/sentry-hunt/issues"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

@@ -73,6 +73,18 @@ pip install -e ".[dev]"
 pytest
 ```
 
+## Complementary Tools
+
+**Sentry** monitors continuously and detects changes. For a different angle on Linux security, see:
+
+- **[spoorlog](https://github.com/sergeiredkin/spoorlog)** — Live forensic triage tool
+  
+  When Sentry alerts you to a change, run spoorlog to investigate instantly: "What changed? Why? Is it dangerous?"
+
+Both tools are read-only, local-first, and designed for incident response teams. Use them together:
+- **Sentry** watches continuously, catches baseline deviations
+- **spoorlog** does fast deep investigation when you need answers now
+
 ## License
 
 This project is released under the MIT License. See [LICENSE](LICENSE).
