@@ -17,13 +17,27 @@ Sentry runs only on your own computer. It does not send any data to the internet
 - Changes to important system files (like the password file or SSH settings)
 - Failed login attempts
 
-## Quick start
+## Install
 
-You need Python 3.11 or newer.
+Requires Python 3.11 or newer.
+
+**Recommended: from GitHub**
 
 ```bash
-pip install -e .
+pip install git+https://github.com/sergeiredkin/sentry-hunt.git
 ```
+
+**For development:**
+
+```bash
+git clone https://github.com/sergeiredkin/sentry-hunt.git
+cd sentry-hunt
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+## Quick start
 
 Run a few collection cycles and print any findings to your terminal:
 
@@ -34,8 +48,10 @@ sentry run --cycles 2
 Or launch the interactive dashboard, which keeps collecting in the background and shows alerts in a live table:
 
 ```bash
-sentry tui
+sudo sentry tui  # sudo for full system visibility
 ```
+
+(Without `sudo`, Sentry works but sees less — unprivileged processes only.)
 
 The first time you run either command, Sentry creates its own database automatically. You do not need to set anything up by hand.
 
