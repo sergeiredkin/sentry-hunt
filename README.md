@@ -65,19 +65,21 @@ If you want Sentry to see everything, run it with `sudo`. Either way, Sentry onl
 
 **`sudo: sentry: command not found`**
 
-When using `sudo`, the conda/venv environment's PATH may not be inherited. Use `sudo -E` to preserve your environment:
-
-```bash
-sudo -E sentry tui
-```
-
-Alternatively, run with the full path:
+When using `sudo`, the environment's PATH is sanitized for security. Run with the full path to your Python installation:
 
 ```bash
 sudo /home/sergei/miniconda3/bin/sentry tui
 ```
 
-(Replace the path with your Python environment's bin directory if different.)
+(Replace `/home/sergei/miniconda3/bin/` with your Python environment's bin directory if different.)
+
+For convenience, create an alias in your `~/.bashrc` or `~/.zshrc`:
+
+```bash
+alias sentry-monitor='sudo /home/sergei/miniconda3/bin/sentry tui'
+```
+
+Then just run: `sentry-monitor`
 
 ## Current limitations
 
