@@ -27,6 +27,7 @@ dev = ["pytest>=8.0", "pytest-cov"]
 
 [project.scripts]
 sentry = "sentry.cli:main"
+sentry-tui = "sentry.tui_wrapper:main"
 
 [project.urls]
 Homepage = "https://github.com/sergeiredkin/sentry-hunt"

@@ -39,19 +39,19 @@ pip install -e ".[dev]"
 
 ## Quick start
 
-Run a few collection cycles and print any findings to your terminal:
+**Launch the interactive dashboard** (automatically elevates to sudo):
+
+```bash
+sentry-tui
+```
+
+(You will be prompted for your password the first time. Sentry needs elevated privileges to see all system changes.)
+
+**Or run collection cycles from the command line:**
 
 ```bash
 sentry run --cycles 2
 ```
-
-Or launch the interactive dashboard, which keeps collecting in the background and shows alerts in a live table:
-
-```bash
-sudo sentry tui  # sudo for full system visibility
-```
-
-(Without `sudo`, Sentry works but sees less — unprivileged processes only.)
 
 The first time you run either command, Sentry creates its own database automatically. You do not need to set anything up by hand.
 
@@ -63,23 +63,28 @@ If you want Sentry to see everything, run it with `sudo`. Either way, Sentry onl
 
 ## Troubleshooting
 
-**`sudo: sentry: command not found`**
+**`sentry-tui` asks for password every time**
 
-When using `sudo`, the environment's PATH is sanitized for security. Run with the full path to your Python installation:
-
-```bash
-sudo /home/sergei/miniconda3/bin/sentry tui
-```
-
-(Replace `/home/sergei/miniconda3/bin/` with your Python environment's bin directory if different.)
-
-For convenience, create an alias in your `~/.bashrc` or `~/.zshrc`:
+If you want to skip the password prompt, add Sentry to your sudoers file (passwordless sudo):
 
 ```bash
-alias sentry-monitor='sudo /home/sergei/miniconda3/bin/sentry tui'
+echo "$(whoami) ALL=(ALL) NOPASSWD: $(which sentry)" | sudo tee -a /etc/sudoers.d/sentry
+sudo chmod 440 /etc/sudoers.d/sentry
 ```
 
-Then just run: `sentry-monitor`
+Then `sentry-tui` will run without prompting for a password.
+
+**For manual `sentry run` without sudo:**
+
+The `sentry run` command works without sudo, but sees only unprivileged data. Use `sudo sentry run` for full visibility.
+
+**Password not recognized?**
+
+Use the full path if `sentry` is not in your sudo's PATH:
+
+```bash
+sudo /path/to/python/bin/sentry run --cycles 2
+```
 
 ## Current limitations
 
