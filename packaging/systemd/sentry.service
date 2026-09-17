@@ -12,6 +12,7 @@ RestartSec=10s
 
 # Keep the state database outside /root so its location is explicit.
 Environment=SENTRY_DB_PATH=/var/lib/sentry/state.db
+EnvironmentFile=-/etc/default/sentry
 StateDirectory=sentry
 
 # Sentry is read-only against the monitored host. Only its state directory is writable.
