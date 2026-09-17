@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import json
 import signal
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -29,6 +32,7 @@ from sentry.rules.r4_persistence import PersistenceRule
 from sentry.rules.r5_auth_anomaly import AuthAnomalyRule
 from sentry.rules.r6_critical_change import CriticalChangeRule
 from sentry.storage.db import make_engine, resolve_db_path
+from sentry.storage.models import AlertRow
 
 # Strips ASCII control characters (including ESC, newline, tab) from text
 # before it's printed to a raw terminal. Evidence fields like a process's
@@ -124,6 +128,37 @@ def cmd_run(args: argparse.Namespace) -> None:
                 time.sleep(interval)
 
 
+def cmd_investigate(args: argparse.Namespace) -> None:
+    """Hand a Sentry alert to spoorlog for a live forensic scan."""
+    _ensure_migrated()
+    with Session(make_engine()) as session:
+        alert = session.get(AlertRow, args.alert_id)
+        if alert is None:
+            raise SystemExit(f"alert {args.alert_id} not found")
+        context = {
+            "source": "sentry",
+            "alert_id": alert.id,
+            "rule_id": alert.rule_id,
+            "severity": alert.severity,
+            "title": alert.title,
+            "created_at": alert.created_at.isoformat(),
+            "evidence": json.loads(alert.evidence_json),
+        }
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as handle:
+        json.dump(context, handle, indent=2)
+        context_path = handle.name
+    try:
+        command = [args.spoorlog, "--report"]
+        if args.output:
+            command.append(args.output)
+        command.extend(["--context", context_path])
+        result = subprocess.run(command, check=False)
+    finally:
+        Path(context_path).unlink(missing_ok=True)
+    raise SystemExit(result.returncode)
+
+
 def cmd_daemon(args: argparse.Namespace) -> None:
     """Run collection continuously; intended for systemd."""
     _ensure_migrated()
@@ -179,6 +214,14 @@ def main() -> None:
     run_parser.add_argument("--cycles", type=int, default=2, help="number of cycles to run")
     run_parser.add_argument("--interval", type=float, default=None, help="seconds between cycles (default: config, 60)")
     run_parser.set_defaults(func=cmd_run)
+
+    investigate_parser = sub.add_parser(
+        "investigate", help="Run spoorlog against a Sentry alert and preserve context"
+    )
+    investigate_parser.add_argument("alert_id", type=int, help="Sentry alert ID")
+    investigate_parser.add_argument("--spoorlog", default="spoorlog", help="spoorlog executable")
+    investigate_parser.add_argument("--output", help="spoorlog report output path")
+    investigate_parser.set_defaults(func=cmd_investigate)
 
     daemon_parser = sub.add_parser("daemon", help="Run continuously; intended for systemd")
     daemon_parser.add_argument("--interval", type=float, default=None, help="seconds between cycles (default: config, 60)")

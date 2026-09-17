@@ -122,6 +122,16 @@ This is an early, working version. A few things to know:
 - You have to start Sentry yourself. It does not yet run on its own in the background as a system service.
 - It has been tested on Debian, Ubuntu, Fedora, and Rocky Linux.
 
+## Investigate an alert with spoorlog
+
+Sentry owns the alert history; spoorlog performs a fresh live triage scan. To hand an alert to spoorlog while preserving its rule, evidence, and time context:
+
+```bash
+sentry investigate ALERT_ID --output investigation.json
+```
+
+Use `--spoorlog /path/to/spoorlog` when the executable is not on `PATH`. The resulting spoorlog report contains a `sentry_context` section.
+
 ## What it will not do
 
 - It does not scan for viruses or malware signatures.
