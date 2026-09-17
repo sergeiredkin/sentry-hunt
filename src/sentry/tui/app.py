@@ -137,7 +137,7 @@ class SentryTUI(App[None]):
 
     def on_mount(self) -> None:
         table = self.query_one(DataTable)
-        table.add_columns("Severity", "Rule", "Title", "Status", "Created")
+        table.add_columns("ID", "Severity", "Rule", "Title", "Status", "Created")
         table.cursor_type = "row"
         self.refresh_alerts()
         self.run_collection_loop()
@@ -217,7 +217,7 @@ class SentryTUI(App[None]):
             # a.title can contain attacker-chosen content (see EvidenceScreen's
             # on_mount comment) -- Text() so it's never parsed as markup.
             table.add_row(
-                a.severity, a.rule_id, Text(a.title), a.status, a.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                str(a.id), a.severity, a.rule_id, Text(a.title), a.status, a.created_at.strftime("%Y-%m-%d %H:%M:%S")
             )
             self._alert_ids_by_row.append(a.id)
 

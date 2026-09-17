@@ -112,7 +112,7 @@ def test_alert_title_markup_is_not_interpreted_in_table(tmp_path, monkeypatch):
             await pilot.pause()
             table = app.query_one(DataTable)
             row_key = list(table.rows.keys())[0]
-            title_column_key = table.ordered_columns[2].key  # Severity, Rule, Title, Status, Created
+            title_column_key = table.ordered_columns[3].key  # ID, Severity, Rule, Title, Status, Created
             cell = table.get_cell(row_key, title_column_key)
             assert cell.plain == malicious_title
 
