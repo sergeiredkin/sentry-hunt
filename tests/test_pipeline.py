@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sentry.collectors._common import HashCache
 from sentry.engine.pipeline import _write_alerts, run_cycle
 from sentry.rules.r1_new_executable import NewExecutableRule
-from sentry.storage.models import AlertRow, ProcessObservationRow
+from sentry.storage.models import AlertRow, CollectorHealthRow, ProcessObservationRow
 from tests.conftest import make_process_observation
 
 
@@ -106,6 +106,19 @@ def test_evidence_json_round_trips(session):
 
 
 # --- security-review fixes: collector fault isolation, hash cache lifetime ---
+
+
+def test_collector_health_records_success_and_failure(session):
+    good = FakeCollector([[make_process_observation(exe_path="/bin/sh", sha256="c" * 64)]])
+    bad = RaisingCollector()
+
+    run_cycle(session, [good, bad], [], previous_cycle_time=None)
+
+    rows = {row.collector_name: row for row in session.execute(select(CollectorHealthRow)).scalars()}
+    assert rows["fake"].status == "ok"
+    assert rows["fake"].observation_count == 1
+    assert rows["raising"].status == "failed"
+    assert "RuntimeError" in rows["raising"].error
 
 
 def test_run_cycle_isolates_a_raising_collector(session, tmp_path):

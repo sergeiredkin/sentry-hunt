@@ -19,6 +19,7 @@ from sentry.suppression.scopes import is_suppressed
 from sentry.storage.models import (
     AlertRow,
     AppStateRow,
+    CollectorHealthRow,
     FileIntegrityRow,
     NetworkObservationRow,
     PersistenceEntryRow,
@@ -62,13 +63,32 @@ def run_cycle(
     cycle_time = sink.begin_cycle()
 
     for collector in collectors:
+        name = getattr(collector, "name", collector.__class__.__name__)
+        started = clock.now()
+        before = sink.emitted_count
+        health = session.get(CollectorHealthRow, name)
+        if health is None:
+            health = CollectorHealthRow(
+                collector_name=name,
+                last_started=started,
+                status="ok",
+                observation_count=0,
+            )
+            session.add(health)
+        else:
+            health.last_started = started
         try:
             collector.collect(sink)
-        except Exception:
+            health.last_completed = clock.now()
+            health.status = "ok"
+            health.error = None
+        except Exception as exc:
             import logging
-            logging.getLogger(__name__).exception(
-                "collector %s raised during collect()", getattr(collector, "name", collector)
-            )
+            health.status = "failed"
+            health.error = f"{type(exc).__name__}: {exc}"[:2000]
+            logging.getLogger(__name__).exception("collector %s raised during collect()", name)
+        health.observation_count = sink.emitted_count - before
+        session.flush()
 
     for model in INTERVAL_MODELS:
         sink.close_cycle(model, cycle_time)

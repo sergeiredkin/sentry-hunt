@@ -172,6 +172,11 @@ class SqlAlchemyObservationSink:
         self._session = session
         self._clock = clock
         self._cycle_time: datetime | None = None
+        self._emitted_count = 0
+
+    @property
+    def emitted_count(self) -> int:
+        return self._emitted_count
 
     def begin_cycle(self, cycle_time: datetime | None = None) -> datetime:
         """Snapshot mode: call once before a batch of collector.collect(sink)
@@ -187,6 +192,7 @@ class SqlAlchemyObservationSink:
         return t
 
     def emit(self, observation: Observation) -> None:
+        self._emitted_count += 1
         mapping = _REGISTRY[type(observation)]
         if isinstance(mapping, _AppendOnlyMapping):
             self._emit_append_only(observation, mapping)

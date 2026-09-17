@@ -35,6 +35,7 @@ from sentry.suppression.scopes import path_hash_value
 from sentry.storage.models import (
     AlertRow,
     AuthEventRow,
+    CollectorHealthRow,
     FileIntegrityRow,
     NetworkObservationRow,
     PersistenceEntryRow,
@@ -187,6 +188,9 @@ class SentryTUI(App[None]):
                 model.__tablename__: session.execute(select(func.count()).select_from(model)).scalar_one()
                 for model in _COUNTED_MODELS
             }
+            failed_collectors = session.execute(
+                select(func.count()).select_from(CollectorHealthRow).where(CollectorHealthRow.status == "failed")
+            ).scalar_one()
             alerts = list(
                 session.execute(select(AlertRow).order_by(AlertRow.created_at.desc()).limit(200)).scalars()
             )
@@ -201,7 +205,8 @@ class SentryTUI(App[None]):
             f"processes={counts['process_observations']} network={counts['network_observations']} "
             f"users={counts['users_groups']} persistence={counts['persistence_entries']} "
             f"files={counts['file_integrity']} auth_events={counts['auth_events']}  |  "
-            f"active: HIGH={active_counts['HIGH']} MEDIUM={active_counts['MEDIUM']} LOW={active_counts['LOW']}"
+            f"active: HIGH={active_counts['HIGH']} MEDIUM={active_counts['MEDIUM']} LOW={active_counts['LOW']}  "
+            f"collector_failures={failed_collectors}"
         )
         self.query_one("#status", Static).update(status)
 

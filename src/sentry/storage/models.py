@@ -302,6 +302,19 @@ class SystemInventoryRow(Base):
     __table_args__ = (Index("ix_system_inventory_collected_at", "collected_at"),)
 
 
+class CollectorHealthRow(Base):
+    """Latest status for each collector, including degraded permissions/errors."""
+
+    __tablename__ = "collector_health"
+
+    collector_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    last_started: Mapped[datetime] = mapped_column(UTCDateTime, nullable=False)
+    last_completed: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ok|failed
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    observation_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
 class AppStateRow(Base):
     """Small persistent key/value state used to resume cycles after restart."""
 
