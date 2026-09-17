@@ -37,6 +37,22 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+## Configuration
+
+Sentry uses a 60-second snapshot interval and a 7-day warmup by default. Optional configuration can be placed at `~/.config/sentry/config.toml`:
+
+```toml
+[sentry]
+snapshot_interval_seconds = 60
+warmup_days = 7
+auth_per_account_threshold = 5
+auth_total_threshold = 10
+auth_window_minutes = 10
+journal_lookback_minutes = 15
+```
+
+Environment variables such as `SENTRY_SNAPSHOT_INTERVAL_SECONDS` override TOML values. `SENTRY_CONFIG_PATH` selects another config file, and `SENTRY_CRITICAL_PATHS` accepts a colon-separated critical-file list.
+
 ## Quick start
 
 **Launch the interactive dashboard** (automatically elevates to sudo):
@@ -90,7 +106,7 @@ sudo /path/to/python/bin/sentry run --cycles 2
 
 This is an early, working version. A few things to know:
 
-- New installs may show alerts for normal things at first. The feature that waits before alerting on brand-new setups is not fully connected yet.
+- New installs suppress noisy executable and listener alerts during the configured warmup period. High-signal rules remain active immediately.
 - You have to start Sentry yourself. It does not yet run on its own in the background as a system service.
 - It has been tested on Debian, Ubuntu, Fedora, and Rocky Linux.
 

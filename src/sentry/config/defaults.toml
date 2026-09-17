@@ -1,1 +1,11 @@
-# Placeholder. Real config schema (TOML defaults + env overrides) built in task 11.
+# Optional user configuration. Copy to ~/.config/sentry/config.toml.
+# Environment variables SENTRY_* override these values.
+[sentry]
+snapshot_interval_seconds = 60
+warmup_days = 7
+skip_warmup = false
+auth_per_account_threshold = 5
+auth_total_threshold = 10
+auth_window_minutes = 10
+journal_lookback_minutes = 15
+# critical_paths = ["/etc/ssh/sshd_config"]

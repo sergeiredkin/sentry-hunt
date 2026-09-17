@@ -302,6 +302,15 @@ class SystemInventoryRow(Base):
     __table_args__ = (Index("ix_system_inventory_collected_at", "collected_at"),)
 
 
+class AppStateRow(Base):
+    """Small persistent key/value state used to resume cycles after restart."""
+
+    __tablename__ = "app_state"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class AlertRow(Base):
     __tablename__ = "alerts"
 

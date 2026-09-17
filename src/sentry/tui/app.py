@@ -31,6 +31,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Label, Static
 
 from sentry.engine.pipeline import run_cycle
 from sentry.storage.db import make_engine, resolve_db_path
+from sentry.suppression.scopes import path_hash_value
 from sentry.storage.models import (
     AlertRow,
     AuthEventRow,
@@ -146,9 +147,11 @@ class SentryTUI(App[None]):
         # importing here (not at module load) avoids a cli<->tui import
         # cycle since cli.py also launches this app.
         from sentry.cli import _build_collectors, _build_rules
+        from sentry.config.loader import load_config
 
-        collectors, hash_cache = _build_collectors()
-        rules = _build_rules()
+        config = load_config()
+        collectors, hash_cache = _build_collectors(config)
+        rules = _build_rules(config)
         while True:
             self._run_one_collection_cycle(collectors, rules, hash_cache)
             time.sleep(self.cycle_interval)
@@ -165,7 +168,12 @@ class SentryTUI(App[None]):
         try:
             with Session(self.engine) as session:
                 self._previous_cycle_time, _findings = run_cycle(
-                    session, collectors, rules, self._previous_cycle_time, hash_cache=hash_cache
+                    session,
+                    collectors,
+                    rules,
+                    self._previous_cycle_time,
+                    hash_cache=hash_cache,
+                    config=config,
                 )
             self.call_from_thread(self.refresh_alerts)
         except Exception:
@@ -221,14 +229,14 @@ class SentryTUI(App[None]):
         self.push_screen(EvidenceScreen(alert_id))
 
     def acknowledge_alert(self, alert_id: int) -> None:
-        self._resolve_alert(alert_id, status="acknowledged", reason="acknowledged via TUI")
+        self._resolve_alert(alert_id, status="acknowledged", reason="acknowledged via TUI", mute=False)
         self.refresh_alerts()
 
     def mute_alert(self, alert_id: int) -> None:
-        self._resolve_alert(alert_id, status="muted", reason="muted via TUI")
+        self._resolve_alert(alert_id, status="muted", reason="muted via TUI", mute=True)
         self.refresh_alerts()
 
-    def _resolve_alert(self, alert_id: int, status: str, reason: str) -> None:
+    def _resolve_alert(self, alert_id: int, status: str, reason: str, mute: bool = False) -> None:
         """The pure DB-mutation half of acknowledge/mute, kept separate
         from refresh_alerts() so it's callable/testable without a mounted
         widget tree (refresh_alerts() touches live widgets via query_one)."""
@@ -237,11 +245,23 @@ class SentryTUI(App[None]):
             if alert is None:
                 return
             alert.status = status
+            evidence = json.loads(alert.evidence_json)
+            scope = "exact_event"
+            match_value = alert.dedup_key
+            if mute and alert.rule_id in {"R1", "R6"}:
+                pairs = []
+                if evidence.get("exe_path"):
+                    pairs.append((evidence.get("exe_path"), evidence.get("sha256")))
+                if evidence.get("path"):
+                    pairs.append((evidence.get("path"), evidence.get("new_sha256", evidence.get("sha256"))))
+                if pairs and pairs[0][0]:
+                    scope = "path_hash"
+                    match_value = path_hash_value(pairs[0][0], pairs[0][1])
             session.add(
                 SuppressionRow(
                     rule_id=alert.rule_id,
-                    scope="exact_event",
-                    match_value=alert.dedup_key,
+                    scope=scope,
+                    match_value=match_value,
                     reason=reason,
                     created_at=datetime.now(timezone.utc),
                     expires_at=None,

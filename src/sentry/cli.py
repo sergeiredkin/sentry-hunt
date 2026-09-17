@@ -13,6 +13,7 @@ from alembic.config import Config
 from sqlalchemy.orm import Session
 
 from sentry.collectors._common import HashCache
+from sentry.config.loader import AppConfig, load_config
 from sentry.collectors.file_integrity import FileIntegrityCollector
 from sentry.collectors.journal_auth import JournalAuthCollector
 from sentry.collectors.network import NetworkCollector
@@ -42,7 +43,8 @@ def _sanitize_for_terminal(s: str) -> str:
     return _CONTROL_CHAR_RE.sub("", s)
 
 
-def _build_collectors():
+def _build_collectors(config: AppConfig | None = None):
+    config = config or load_config()
     # Shared across Process/NetworkCollector so a binary hashed once (by
     # either collector, in either cycle) is never re-hashed while its
     # mtime+size stay the same -- see HashCache's docstring. Returned
@@ -55,19 +57,24 @@ def _build_collectors():
         NetworkCollector(hash_cache=hash_cache),
         UsersCollector(),
         PersistenceCollector(),
-        FileIntegrityCollector(),
-        JournalAuthCollector(),
+        FileIntegrityCollector(paths=config.critical_paths or None),
+        JournalAuthCollector(lookback=config.journal_lookback),
     ]
     return collectors, hash_cache
 
 
-def _build_rules():
+def _build_rules(config: AppConfig | None = None):
+    config = config or load_config()
     return [
         NewExecutableRule(),
         PrivilegeChangeRule(),
         NewListenerRule(),
         PersistenceRule(),
-        AuthAnomalyRule(),
+        AuthAnomalyRule(
+            per_account_threshold=config.auth_per_account_threshold,
+            total_threshold=config.auth_total_threshold,
+            window=config.auth_window,
+        ),
         CriticalChangeRule(),
     ]
 
@@ -81,18 +88,22 @@ def _ensure_migrated() -> None:
 
 def cmd_run(args: argparse.Namespace) -> None:
     _ensure_migrated()
+    config = load_config()
+    interval = config.snapshot_interval_seconds if args.interval is None else args.interval
     print(f"DB: {resolve_db_path()}")
     engine = make_engine()
 
     with Session(engine) as session:
-        collectors, hash_cache = _build_collectors()
-        rules = _build_rules()
+        collectors, hash_cache = _build_collectors(config)
+        rules = _build_rules(config)
         previous = None
 
         for i in range(args.cycles):
             print(f"\n--- cycle {i + 1}/{args.cycles} ---")
             t0 = time.monotonic()
-            previous, findings = run_cycle(session, collectors, rules, previous, hash_cache=hash_cache)
+            previous, findings = run_cycle(
+                session, collectors, rules, previous, hash_cache=hash_cache, config=config
+            )
             elapsed = time.monotonic() - t0
             print(f"  collected+evaluated in {elapsed:.1f}s")
 
@@ -105,14 +116,16 @@ def cmd_run(args: argparse.Namespace) -> None:
                     print(f"  [{f.severity:6s}] {f.rule_id} {_sanitize_for_terminal(f.title)}")
 
             if i < args.cycles - 1:
-                time.sleep(args.interval)
+                time.sleep(interval)
 
 
 def cmd_tui(args: argparse.Namespace) -> None:
     _ensure_migrated()
+    config = load_config()
     from sentry.tui.app import run_tui
 
-    run_tui(cycle_interval=args.interval)
+    interval = config.snapshot_interval_seconds if args.interval is None else args.interval
+    run_tui(cycle_interval=interval)
 
 
 def main() -> None:
@@ -121,11 +134,11 @@ def main() -> None:
 
     run_parser = sub.add_parser("run", help="Run collection+evaluation cycles, printing findings to the console")
     run_parser.add_argument("--cycles", type=int, default=2, help="number of cycles to run")
-    run_parser.add_argument("--interval", type=float, default=5.0, help="seconds between cycles")
+    run_parser.add_argument("--interval", type=float, default=None, help="seconds between cycles (default: config, 60)")
     run_parser.set_defaults(func=cmd_run)
 
     tui_parser = sub.add_parser("tui", help="Launch the interactive dashboard")
-    tui_parser.add_argument("--interval", type=float, default=30.0, help="seconds between background collection cycles")
+    tui_parser.add_argument("--interval", type=float, default=None, help="seconds between background collection cycles (default: config, 60)")
     tui_parser.set_defaults(func=cmd_tui)
 
     args = parser.parse_args()
