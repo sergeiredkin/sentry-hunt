@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import signal
 import time
 from pathlib import Path
 
@@ -86,6 +87,14 @@ def _ensure_migrated() -> None:
     command.upgrade(cfg, "head")
 
 
+def _run_collection_cycle(session, collectors, rules, previous, hash_cache, config):
+    t0 = time.monotonic()
+    previous, findings = run_cycle(
+        session, collectors, rules, previous, hash_cache=hash_cache, config=config
+    )
+    return previous, findings, time.monotonic() - t0
+
+
 def cmd_run(args: argparse.Namespace) -> None:
     _ensure_migrated()
     config = load_config()
@@ -100,23 +109,57 @@ def cmd_run(args: argparse.Namespace) -> None:
 
         for i in range(args.cycles):
             print(f"\n--- cycle {i + 1}/{args.cycles} ---")
-            t0 = time.monotonic()
-            previous, findings = run_cycle(
-                session, collectors, rules, previous, hash_cache=hash_cache, config=config
+            previous, findings, elapsed = _run_collection_cycle(
+                session, collectors, rules, previous, hash_cache, config
             )
-            elapsed = time.monotonic() - t0
             print(f"  collected+evaluated in {elapsed:.1f}s")
 
-            if previous is not None and i == 0:
-                print("  (baseline cycle -- nothing evaluated yet, no prior state to diff against)")
-            elif not findings:
-                print("  no findings")
+            if not findings:
+                print("  no surfaced findings")
             else:
                 for f in findings:
                     print(f"  [{f.severity:6s}] {f.rule_id} {_sanitize_for_terminal(f.title)}")
 
             if i < args.cycles - 1:
                 time.sleep(interval)
+
+
+def cmd_daemon(args: argparse.Namespace) -> None:
+    """Run collection continuously; intended for systemd."""
+    _ensure_migrated()
+    config = load_config()
+    interval = config.snapshot_interval_seconds if args.interval is None else args.interval
+    engine = make_engine()
+    stop = False
+
+    def request_stop(_signum, _frame):
+        nonlocal stop
+        stop = True
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
+    print(f"Sentry daemon started; DB: {resolve_db_path()}", flush=True)
+
+    with Session(engine) as session:
+        collectors, hash_cache = _build_collectors(config)
+        rules = _build_rules(config)
+        previous = None
+        while not stop:
+            previous, findings, elapsed = _run_collection_cycle(
+                session, collectors, rules, previous, hash_cache, config
+            )
+            print(f"cycle complete in {elapsed:.1f}s; surfaced findings={len(findings)}", flush=True)
+            stop = stop or not _sleep_interruptibly(interval, lambda: stop)
+    print("Sentry daemon stopped", flush=True)
+
+
+def _sleep_interruptibly(seconds: float, stopped) -> bool:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if stopped():
+            return False
+        time.sleep(min(1.0, deadline - time.monotonic()))
+    return True
 
 
 def cmd_tui(args: argparse.Namespace) -> None:
@@ -136,6 +179,10 @@ def main() -> None:
     run_parser.add_argument("--cycles", type=int, default=2, help="number of cycles to run")
     run_parser.add_argument("--interval", type=float, default=None, help="seconds between cycles (default: config, 60)")
     run_parser.set_defaults(func=cmd_run)
+
+    daemon_parser = sub.add_parser("daemon", help="Run continuously; intended for systemd")
+    daemon_parser.add_argument("--interval", type=float, default=None, help="seconds between cycles (default: config, 60)")
+    daemon_parser.set_defaults(func=cmd_daemon)
 
     tui_parser = sub.add_parser("tui", help="Launch the interactive dashboard")
     tui_parser.add_argument("--interval", type=float, default=None, help="seconds between background collection cycles (default: config, 60)")

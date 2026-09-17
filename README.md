@@ -69,6 +69,18 @@ sentry-tui
 sentry run --cycles 2
 ```
 
+**Run continuously as a system service:**
+
+```bash
+sudo python3 -m pip install .
+sudo install -D -m 0644 packaging/systemd/sentry.service /etc/systemd/system/sentry.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now sentry
+sudo systemctl status sentry
+```
+
+The service stores its database at `/var/lib/sentry/state.db`. Override settings with `/etc/default/sentry` or the normal Sentry configuration file. View logs with `journalctl -u sentry -f`.
+
 The first time you run either command, Sentry creates its own database automatically. You do not need to set anything up by hand.
 
 ## Why it needs extra permissions

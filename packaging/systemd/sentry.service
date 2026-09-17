@@ -1,0 +1,24 @@
+[Unit]
+Description=Sentry local Linux threat-hunting monitor
+After=local-fs.target systemd-journald.service
+Wants=systemd-journald.service
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/sentry daemon
+Restart=on-failure
+RestartSec=10s
+
+# Keep the state database outside /root so its location is explicit.
+Environment=SENTRY_DB_PATH=/var/lib/sentry/state.db
+StateDirectory=sentry
+
+# Sentry is read-only against the monitored host. Only its state directory is writable.
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/var/lib/sentry
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
